@@ -194,6 +194,59 @@ p2.CategoryID = p.CategoryID
 - `p2` pertenece a la subconsulta.
 - La subconsulta se calcula teniendo en cuenta la categoría del producto actual.
 
+### ¿Por qué es correlacionada?
+
+La consulta exterior recorre los productos uno por uno. Para cada producto, la subconsulta vuelve a calcular el promedio de la categoría de ese producto.
+
+Por ejemplo:
+
+```text
+Producto A -> categoría 1 -> compara con el promedio de categoría 1
+Producto B -> categoría 2 -> compara con el promedio de categoría 2
+Producto C -> categoría 1 -> compara con el promedio de categoría 1
+```
+
+La subconsulta no calcula un único promedio general. Calcula un promedio distinto según la categoría del producto actual.
+
+### Otro ejemplo: empleados que superan el promedio de su ciudad
+
+```sql
+SELECT
+    e.FirstName,
+    e.LastName,
+    e.City,
+    e.Salary
+FROM Employees e
+WHERE e.Salary > (
+    SELECT AVG(e2.Salary)
+    FROM Employees e2
+    WHERE e2.City = e.City
+);
+```
+
+Para cada empleado, se calcula el salario promedio de su ciudad y se compara con su salario.
+
+### Otro ejemplo: productos más caros que el promedio de su proveedor
+
+```sql
+SELECT
+    p.ProductName,
+    p.SupplierID,
+    p.UnitPrice
+FROM Products p
+WHERE p.UnitPrice > (
+    SELECT AVG(p2.UnitPrice)
+    FROM Products p2
+    WHERE p2.SupplierID = p.SupplierID
+);
+```
+
+La condición que conecta ambas consultas es la que hace que sea correlacionada:
+
+```sql
+p2.SupplierID = p.SupplierID
+```
+
 ---
 
 ## 8. `EXISTS` como subconsulta correlacionada
@@ -278,7 +331,7 @@ La subconsulta recibe el alias `resumen` y después se puede consultar como una 
 
 ## 11. Subconsulta en `SELECT`
 
-También se puede usar una subconsulta como columna calculada.
+También se puede usar una subconsulta como una columna calculada. En este caso, la consulta exterior muestra una fila por cliente y la subconsulta calcula un dato adicional para ese cliente.
 
 ```sql
 SELECT
@@ -291,7 +344,78 @@ SELECT
 FROM Customers c;
 ```
 
-Muestra cada cliente junto con la cantidad de pedidos que realizó.
+### ¿Cómo se lee?
+
+```text
+Para cada cliente c:
+    contar los pedidos cuyo CustomerID sea igual al del cliente actual
+    mostrar ese resultado como cantidad_pedidos
+```
+
+La relación está en:
+
+```sql
+o.CustomerID = c.CustomerID
+```
+
+Como la subconsulta usa `c.CustomerID`, que pertenece a la consulta exterior, también es una subconsulta correlacionada.
+
+El resultado sería parecido a:
+
+```text
+CompanyName       cantidad_pedidos
+---------------   ----------------
+Cliente A         12
+Cliente B          0
+Cliente C          5
+```
+
+### Ejemplo: total gastado por cada cliente
+
+```sql
+SELECT
+    c.CompanyName,
+    (
+        SELECT SUM(od.UnitPrice * od.Quantity * (1 - od.Discount))
+        FROM Orders o
+        JOIN `Order Details` od
+            ON od.OrderID = o.OrderID
+        WHERE o.CustomerID = c.CustomerID
+    ) AS total_gastado
+FROM Customers c;
+```
+
+Para cada cliente, la subconsulta suma únicamente los pedidos de ese cliente.
+
+### Ejemplo: último pedido de cada cliente
+
+```sql
+SELECT
+    c.CompanyName,
+    (
+        SELECT MAX(o.OrderDate)
+        FROM Orders o
+        WHERE o.CustomerID = c.CustomerID
+    ) AS ultimo_pedido
+FROM Customers c;
+```
+
+La subconsulta busca la fecha máxima de pedido para cada cliente.
+
+### Idea principal
+
+Una subconsulta en `SELECT` agrega un dato calculado al resultado principal:
+
+```sql
+SELECT
+    tabla_principal.nombre,
+    (
+        SELECT funcion(tabla_relacionada.valor)
+        FROM tabla_relacionada
+        WHERE tabla_relacionada.id = tabla_principal.id
+    ) AS resultado_calculado
+FROM tabla_principal;
+```
 
 ---
 
