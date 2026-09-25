@@ -24,176 +24,113 @@ CREATE TABLE directors (
 
 ---
 
-## 2) Insertar Top 5 de actores con más experiencia en la tabla `directors`
-
-### Problema
-Se quiere cargar en `directors` a los 5 actores con mayor cantidad de películas filmadas, usando una subconsulta.
+## 2) Insertar los 5 actores con más películas
 
 ```sql
-INSERT INTO directors (first_name, last_name, num_peliculas)
+INSERT INTO directors (Nombre, Apellido, NumPeliculas)
 SELECT a.first_name,
        a.last_name,
-       COUNT(*) AS num_peliculas
-FROM actor a
-JOIN film_actor fa ON fa.actor_id = a.actor_id
+       COUNT(fa.film_id) AS peli
+FROM actor AS a
+INNER JOIN film_actor AS fa ON a.actor_id = fa.actor_id
 GROUP BY a.actor_id, a.first_name, a.last_name
-ORDER BY num_peliculas DESC
+ORDER BY peli DESC
 LIMIT 5;
 ```
 
-### Qué resuelve
-- Calcula cuántas películas tuvo cada actor.
-- Inserta los top 5 en la tabla `directors`.
-- Muestra uso de `INSERT INTO ... SELECT` con `GROUP BY` y `LIMIT`.
+---
 
-> En este caso, la tabla `directors` se usa como almacenamiento de personas con mayor experiencia, aunque en la práctica se suele trabajar con una tabla más general de `people` o `personas`.
+## 3) Clientes con más gastos
+
+```sql
+SELECT c.customer_id,
+       c.first_name,
+       c.last_name,
+       SUM(p.amount) AS gasto
+FROM customer AS c
+INNER JOIN payment AS p ON c.customer_id = p.customer_id
+GROUP BY c.customer_id, c.first_name, c.first_name
+ORDER BY gasto DESC
+LIMIT 10;
+```
 
 ---
 
-## 3) Agregar columna `premium_customer`
-
-### Problema
-Agregar una columna para marcar si un cliente es premium o no, por defecto sin cliente premium.
+## 4) Cantidad de películas por rating
 
 ```sql
-ALTER TABLE customer
-ADD COLUMN premium_customer CHAR(1) DEFAULT 'F';
+SELECT f.rating,
+       COUNT(f.rating) AS cou
+FROM film AS f
+GROUP BY f.rating
+ORDER BY cou DESC;
 ```
-
-### Qué resuelve
-- Extiende la tabla `customer` con un campo lógico básico.
-- Permite guardar `T` o `F` para premium.
 
 ---
 
-## 4) Marcar a los 10 clientes con más gastos como premium
-
-### Problema
-Actualizar la columna `premium_customer` en los 10 clientes que más gastaron en la plataforma.
+## 5) Primer y último pago
 
 ```sql
-UPDATE customer c
-JOIN (
-    SELECT customer_id,
-           SUM(amount) AS total_gasto
-    FROM payment
-    GROUP BY customer_id
-    ORDER BY total_gasto DESC
-    LIMIT 10
-) top10 ON top10.customer_id = c.customer_id
-SET c.premium_customer = 'T';
+(SELECT *
+FROM payment AS p
+ORDER BY p.payment_date DESC
+LIMIT 1)
+UNION
+(SELECT *
+FROM payment AS p
+ORDER BY p.payment_date ASC
+LIMIT 1);
 ```
-
-### Qué resuelve
-- Calcula el gasto total por cliente.
-- Identifica los 10 con mayor gasto.
-- Actualiza su estado premium.
 
 ---
 
-## 5) Cantidad de películas por rating
-
-### Problema
-Listar los distintos ratings de películas y cuántas películas hay en cada uno.
+## 6) Pagos agrupados por fecha
 
 ```sql
-SELECT rating,
-       COUNT(*) AS cantidad_peliculas
-FROM film
-GROUP BY rating
-ORDER BY cantidad_peliculas DESC;
+SELECT p.payment_date,
+       SUM(p.amount)
+FROM payment AS p
+GROUP BY p.payment_date;
 ```
-
-### Qué resuelve
-- Agrupa películas por clasificación según edad (`G`, `PG`, `R`, etc.).
-- Ordena desde el rating más frecuente al menos frecuente.
 
 ---
 
-## 6) Primera y última fecha de pago
-
-### Problema
-Determinar cuándo hubo el primer y último pago registrado.
+## 7) Extraer el mes
 
 ```sql
-SELECT MIN(payment_date) AS primera_fecha,
-       MAX(payment_date) AS ultima_fecha
-FROM payment;
+-- Ejercicio pendiente: revisar cómo extraer el mes.
 ```
-
-### Qué resuelve
-- Muestra la fecha mínima y máxima del campo `payment_date`.
-- Es una consulta típica para análisis temporal.
-
----
-
-## 7) Promedio de pagos por mes
-
-### Problema
-Calcular el promedio de pagos por cada mes del año.
-
-```sql
-SELECT MONTHNAME(payment_date) AS mes,
-       YEAR(payment_date) AS anio,
-       ROUND(AVG(amount), 2) AS promedio_pago
-FROM payment
-GROUP BY YEAR(payment_date), MONTH(payment_date), MONTHNAME(payment_date)
-ORDER BY YEAR(payment_date), MONTH(payment_date);
-```
-
-### Qué resuelve
-- Extrae mes y año de una fecha.
-- Calcula promedio mensual de pagos.
-- Es útil para reportes y análisis económico.
 
 ---
 
 ## 8) 10 distritos con más alquileres
 
-### Problema
-Identificar los 10 distritos donde se realizaron más alquileres.
-
 ```sql
-SELECT a.district,
-       COUNT(r.rental_id) AS total_alquileres
-FROM address a
-JOIN customer c ON c.address_id = a.address_id
-JOIN rental r ON r.customer_id = c.customer_id
-GROUP BY a.district
-ORDER BY total_alquileres DESC
+SELECT ad.district,
+       COUNT(*) AS total
+FROM address AS ad
+JOIN customer AS c ON ad.address_id = c.address_id
+JOIN rental AS r ON c.customer_id = r.customer_id
+GROUP BY ad.district
+ORDER BY total DESC
 LIMIT 10;
 ```
 
-### Qué resuelve
-- Relaciona direcciones, clientes y alquileres.
-- Cuenta alquileres por distrito.
-- Ordena de mayor a menor.
-
 ---
 
-## 9) Agregar columna `stock` a `inventory`
-
-### Problema
-Agregar un campo que indique cuántas copias de una película hay en inventario en una tienda.
+## 9) Agregar y cargar la columna `stock`
 
 ```sql
 ALTER TABLE inventory
-ADD COLUMN stock INT NOT NULL DEFAULT 5;
+ADD COLUMN stock INT;
+
+UPDATE inventory AS i
+SET stock = 5;
 ```
-
-### Qué resuelve
-- Guarda la cantidad disponible por copia.
-- Cada inventario de una película tendrá por defecto 5
-  unidades.
-
-> Importante: en Sakila el nombre correcto es `inventory`, no `inventory_id`; `inventory_id` es la clave primaria de la tabla.
 
 ---
 
 ## 10) Trigger `update_stock`
-
-### Problema
-Cada vez que se registre un alquiler, restar una unidad del stock de ese inventario, considerando que el alquiler tiene información del cliente y ese cliente pertenece a una tienda.
 
 ```sql
 DELIMITER $$
@@ -202,25 +139,30 @@ CREATE TRIGGER update_stock
 AFTER INSERT ON rental
 FOR EACH ROW
 BEGIN
-    UPDATE inventory i
-    JOIN customer c ON c.customer_id = NEW.customer_id
-    SET i.stock = i.stock - 1
-    WHERE i.inventory_id = NEW.inventory_id
-      AND i.store_id = c.store_id
-      AND i.stock > 0;
+    DECLARE stock_m INT;
+
+    SELECT stock
+    INTO stock_m
+    FROM inventory
+    WHERE inventory_id = NEW.inventory_id;
+
+    IF stock_m > 0 THEN
+        UPDATE inventory
+        SET stock = stock - 1
+        WHERE inventory_id = NEW.inventory_id;
+    END IF;
 END$$
 
 DELIMITER ;
+
+SHOW TRIGGERS;
+
+SELECT * FROM rental;
+SELECT * FROM inventory AS i;
+
+INSERT INTO rental (inventory_id, customer_id, staff_id)
+VALUES (1, 1, 1);
 ```
-
-### Qué resuelve
-- Detecta un alquiler nuevo.
-- Busca la tienda del cliente.
-- Resta 1 del stock de ese inventario.
-- Evita que el stock quede negativo.
-
-### Observación
-Este trigger resuelve el detalle clave del enunciado: el `rental` no tiene la tienda directamente, pero el `customer` sí está asociado a una `store_id`.
 
 ---
 

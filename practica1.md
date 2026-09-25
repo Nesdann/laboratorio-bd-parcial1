@@ -1,181 +1,114 @@
-# Práctica 1 - Consultas con SQL y CTEs
+# Práctica 1 - Repaso parcial SQL
 
-Este documento reúne las consignas, la lógica de resolución y ejemplos con `WITH` para que sirvan como molde para estudiar.
+La idea es resolver todo con `JOIN`, `GROUP BY`, `ORDER BY` y `LIMIT`, sin depender tanto de `WITH`.
 
 ---
 
-## 1. Listar los 5 clientes que más ingresos han generado a lo largo del tiempo
-
-### Enunciado
-Listar los 5 clientes que más ingresos han generado a lo largo del tiempo.
-
-### Solución con `WITH`
+## 1) Los 5 clientes que más ingresos generaron
 
 ```sql
-WITH ingresos_cliente AS (
-    SELECT
-        c.CustomerID,
-        c.CompanyName,
-        SUM(od.UnitPrice * od.Quantity * (1 - od.Discount)) AS total_ingresos
-    FROM Customers c
-    JOIN Orders o ON o.CustomerID = c.CustomerID
-    JOIN `Order Details` od ON od.OrderID = o.OrderID
-    GROUP BY c.CustomerID, c.CompanyName
-)
 SELECT
-    CustomerID,
-    CompanyName,
-    total_ingresos
-FROM ingresos_cliente
-ORDER BY total_ingresos DESC
+    c.ContactName AS nombre,
+    SUM(od.UnitPrice * (1 - od.Discount) * od.Quantity) AS ingresos
+FROM Customers AS c
+JOIN Orders AS o ON c.CustomerID = o.CustomerID
+JOIN `Order Details` AS od ON od.OrderID = o.OrderID
+GROUP BY c.CustomerID, c.ContactName
+ORDER BY ingresos DESC
 LIMIT 5;
 ```
 
-### Qué resuelve
-- calcula el ingreso total por cliente
-- ordena de mayor a menor
-- devuelve solo los 5 primeros
+Explicación breve:
+- se cruzan `Customers`, `Orders` y `Order Details`
+- se calcula ingreso por cada detalle: `precio * cantidad * (1 - descuento)`
+- se agrupa por cliente
+- se ordena de mayor a menor y se toma el top 5
 
 ---
 
-## 2. Listar cada producto con sus ventas totales, agrupados por categoría
-
-### Enunciado
-Listar cada producto con sus ventas totales, agrupados por categoría.
-
-### Solución con `WITH`
+## 2) Cada producto con sus ventas totales, por categoría
 
 ```sql
-WITH ventas_producto AS (
-    SELECT
-        p.ProductID,
-        p.ProductName,
-        p.CategoryID,
-        c.CategoryName,
-        SUM(od.Quantity) AS total_unidades_vendidas
-    FROM Products p
-    JOIN `Order Details` od ON od.ProductID = p.ProductID
-    JOIN Categories c ON c.CategoryID = p.CategoryID
-    GROUP BY p.ProductID, p.ProductName, p.CategoryID, c.CategoryName
-)
 SELECT
-    ProductID,
-    ProductName,
-    CategoryName,
-    total_unidades_vendidas
-FROM ventas_producto
-ORDER BY CategoryName, ProductName;
+    p.ProductName AS pname,
+    ca.CategoryName,
+    SUM(od.UnitPrice * od.Quantity * (1 - od.Discount)) AS ventas_totales
+FROM Products AS p
+INNER JOIN Categories AS ca ON p.CategoryID = ca.CategoryID
+INNER JOIN `Order Details` AS od ON p.ProductID = od.ProductID
+GROUP BY p.ProductID, p.ProductName, ca.CategoryID, ca.CategoryName;
 ```
 
-### Qué resuelve
-- suma la cantidad vendida por cada producto
-- agrupa la información por categoría
-- muestra el producto y su total vendido
+Explicación breve:
+- cada producto tiene un `ProductID`
+- la suma se calcula por producto y categoría
+- si hay `SUM`, hace falta `GROUP BY` sobre las columnas que se muestran
 
 ---
 
-## 3. Calcular el total de ventas para cada categoría
-
-### Enunciado
-Calcular el total de ventas para cada categoría.
-
-### Solución con `WITH`
+## 3) Total de ventas por categoría
 
 ```sql
-WITH ventas_categoria AS (
-    SELECT
-        p.CategoryID,
-        c.CategoryName,
-        SUM(od.Quantity * od.UnitPrice * (1 - od.Discount)) AS total_ventas
-    FROM Products p
-    JOIN `Order Details` od ON od.ProductID = p.ProductID
-    JOIN Categories c ON c.CategoryID = p.CategoryID
-    GROUP BY p.CategoryID, c.CategoryName
-)
 SELECT
-    CategoryID,
-    CategoryName,
-    total_ventas
-FROM ventas_categoria
-ORDER BY total_ventas DESC;
+    ca.CategoryName,
+    SUM(od.UnitPrice * od.Quantity * (1 - od.Discount)) AS ventas_totales
+FROM Categories AS ca
+INNER JOIN Products AS p ON p.CategoryID = ca.CategoryID
+INNER JOIN `Order Details` AS od ON od.ProductID = p.ProductID
+GROUP BY ca.CategoryID, ca.CategoryName;
 ```
 
-### Qué resuelve
-- obtiene el monto total vendido por categoría
-- facilita comparar categorías entre sí
+Explicación breve:
+- se agrupa por categoría
+- se suma el total de ventas de todos los productos de esa categoría
 
 ---
 
-## 4. Crear una vista que liste los empleados con más ventas por cada año
+## 4) Vista de empleados con más ventas por año
 
-### Enunciado
-Crear una vista que liste los empleados con más ventas por cada año, mostrando empleado, año y total de ventas. Ordenar por año ascendente.
-
-### Solución
+Esto es más avanzado y no suele entrar tan literal en un parcial, pero la idea es:
 
 ```sql
-CREATE VIEW best_employees AS
-WITH ventas_empleado AS (
-    SELECT
-        e.EmployeeID,
-        e.FirstName,
-        e.LastName,
-        YEAR(o.OrderDate) AS OrderYear,
-        SUM(od.UnitPrice * od.Quantity * (1 - od.Discount)) AS TotalSales
-    FROM Employees e
-    JOIN Orders o ON o.EmployeeID = e.EmployeeID
-    JOIN `Order Details` od ON od.OrderID = o.OrderID
-    GROUP BY e.EmployeeID, e.FirstName, e.LastName, YEAR(o.OrderDate)
-),
-ranking AS (
-    SELECT
-        EmployeeID,
-        FirstName,
-        LastName,
-        OrderYear,
-        TotalSales,
-        ROW_NUMBER() OVER (
-            PARTITION BY OrderYear
-            ORDER BY TotalSales DESC
-        ) AS posicion
-    FROM ventas_empleado
-)
+CREATE VIEW employeeOfTheYear AS
 SELECT
-    EmployeeID,
-    FirstName,
-    LastName,
-    OrderYear,
-    TotalSales
-FROM ranking
-WHERE posicion = 1
-ORDER BY OrderYear ASC;
+    e.EmployeeID,
+    e.FirstName,
+    e.LastName,
+    YEAR(o.OrderDate) AS anio,
+    SUM(od.UnitPrice * od.Quantity * (1 - od.Discount)) AS total_de_ventas
+FROM Employees AS e
+JOIN Orders AS o ON o.EmployeeID = e.EmployeeID
+JOIN `Order Details` AS od ON od.OrderID = o.OrderID
+GROUP BY e.EmployeeID, e.FirstName, e.LastName, YEAR(o.OrderDate);
 ```
 
-### Qué resuelve
-- agrupa ventas por empleado y año
-- ordena por ventas totales
-- toma solo al empleado con más ventas en cada año
-
-> También se puede consultar luego con:
->
-> ```sql
-> SELECT *
-> FROM best_employees;
-> ```
+Luego se podría usar para ordenar y quedarse con el mejor por año, pero la parte clave es que una vista guarda una consulta y la muestra como si fuera una tabla.
 
 ---
 
-## 5. Trigger para descontar stock después de insertar en `Order Details`
+## 5) Trigger para descontar stock al insertar un detalle
 
-### Enunciado
-Crear un trigger que se ejecute después de insertar un nuevo registro en la tabla `Order Details`. Este trigger debe actualizar la tabla `Products` para disminuir la cantidad en stock (`UnitsInStock`) del producto correspondiente, restando la cantidad (`Quantity`) que se acaba de insertar en el detalle del pedido.
+### Error clásico
 
-### Solución
+```sql
+CREATE TRIGGER updateStock
+AFTER INSERT ON `Order Details`
+FOR EACH ROW
+BEGIN
+    UPDATE Products
+    SET Products.UnitsInStock = Products.UnitsInStock - `Order Details`.Quantity
+    WHERE Products.ProductID = `Order Details`.ProductID;
+END;
+```
+
+Esto está mal porque `Order Details` no es una referencia válida dentro del trigger. Hay que usar `NEW`.
+
+### Forma correcta
 
 ```sql
 DELIMITER $$
 
-CREATE TRIGGER update_stock
+CREATE TRIGGER updateStock
 AFTER INSERT ON `Order Details`
 FOR EACH ROW
 BEGIN
@@ -187,175 +120,69 @@ END$$
 DELIMITER ;
 ```
 
-### Qué resuelve
-- cuando se agrega una fila a `Order Details`
-- toma la cantidad nueva
-- resta esa cantidad al stock del producto
+Explicación breve:
+- `NEW.Quantity` = cantidad que se acaba de ingresar
+- `NEW.ProductID` = producto asociado a ese detalle
+- el trigger descuenta esa cantidad del stock
 
-### Observación
-Este trigger es correcto para la lógica básica de stock. Si se quiere evitar stock negativo, se puede agregar una validación adicional:
+---
+
+## Regla rápida para SQL
 
 ```sql
-DELIMITER $$
+SELECT ...
+FROM ...
+JOIN ...
+WHERE ...
+GROUP BY ...
+ORDER BY ...
+LIMIT ...;
+```
 
-CREATE TRIGGER update_stock
-AFTER INSERT ON `Order Details`
-FOR EACH ROW
-BEGIN
-    UPDATE Products
-    SET UnitsInStock = UnitsInStock - NEW.Quantity
-    WHERE ProductID = NEW.ProductID
-      AND UnitsInStock >= NEW.Quantity;
-END$$
+Orden lógico habitual:
+1. unir tablas
+2. filtrar
+3. agrupar
+4. ordenar
+5. limitar
 
-DELIMITER ;
+---
+
+## Columna virtual / calculada
+
+A veces no hace falta calcular todo con `SELECT` cada vez. Se puede crear una columna calculada que se genere sola.
+
+Ejemplo:
+
+```sql
+ALTER TABLE `Order Details`
+ADD COLUMN subtotal DECIMAL(10,2)
+GENERATED ALWAYS AS (UnitPrice * Quantity * (1 - Discount)) STORED;
+```
+
+Qué hace:
+- toma valores numéricos de `UnitPrice`, `Quantity` y `Discount`
+- calcula la expresión automáticamente
+- guarda el resultado en una columna nueva
+
+Esto sirve para no repetir la fórmula en todas las consultas.
+
+Ejemplo de uso:
+
+```sql
+SELECT ProductID, subtotal
+FROM `Order Details`;
 ```
 
 ---
 
-## 6. Crear el rol `admin` con permisos específicos
+## Resumen final
 
-### Enunciado
-Crear un rol llamado admin y otorgarle los siguientes permisos:
-- crear registros en la tabla `Customers`
-- actualizar solamente la columna `Phone` de `Customers`
+- `JOIN` se usa para relacionar tablas.
+- `GROUP BY` se usa cuando hay `SUM`, `COUNT`, `AVG`, etc.
+- `ORDER BY` ordena el resultado.
+- `LIMIT` corta la cantidad de filas.
+- En triggers, se usa `NEW` para leer los valores del registro insertado.
+- Una columna calculada no es magia: es simplemente una expresión matemática que MySQL calcula sola.
 
-### Solución
-
-```sql
-CREATE ROLE admin;
-
-GRANT INSERT ON Northwind.Customers TO admin;
-GRANT UPDATE (Phone) ON Northwind.Customers TO admin;
-```
-
-### Si querés asignarlo a un usuario
-
-```sql
-GRANT admin TO 'usuario1'@'localhost';
-```
-
-### Qué resuelve
-- crea un rol administrativo básico
-- permite agregar clientes
-- permite modificar únicamente el teléfono
-- no da permiso para tocar otras columnas
-
----
-
-## Consultas iniciales del práctico
-
-Estas fueron las consultas base que se trabajaron al principio:
-
-### 1) Empleados con mayor total de ventas
-
-```sql
-SELECT
-    e.EmployeeID,
-    e.FirstName,
-    SUM(od.UnitPrice * od.Quantity * (1 - od.Discount)) AS TotalPrice
-FROM Employees AS e
-JOIN Orders AS ord ON e.EmployeeID = ord.EmployeeID
-JOIN `Order Details` AS od ON od.OrderID = ord.OrderID
-GROUP BY e.EmployeeID, e.FirstName
-ORDER BY TotalPrice DESC
-LIMIT 10;
-```
-
-### 2) Productos con ventas totales por categoría
-
-```sql
-SELECT
-    p.ProductID,
-    p.CategoryID,
-    p.ProductName,
-    c.CategoryName,
-    SUM(od.Quantity) AS total_vendido
-FROM Products AS p
-JOIN `Order Details` AS od ON p.ProductID = od.ProductID
-JOIN Categories AS c ON p.CategoryID = c.CategoryID
-GROUP BY p.CategoryID, p.ProductID, p.ProductName, c.CategoryName;
-```
-
-### 3) Total de ventas por categoría
-
-```sql
-SELECT
-    p.CategoryID,
-    c.CategoryName,
-    SUM(od.Quantity * od.UnitPrice * (1 - od.Discount)) AS total_ventas
-FROM Products AS p
-JOIN `Order Details` AS od ON p.ProductID = od.ProductID
-JOIN Categories AS c ON p.CategoryID = c.CategoryID
-GROUP BY p.CategoryID, c.CategoryName;
-```
-
-### 4) Vista de empleados con más ventas por año
-
-```sql
-CREATE VIEW best_employees AS
-SELECT
-    e.EmployeeID,
-    e.FirstName,
-    e.LastName,
-    SUM(od.Quantity * od.UnitPrice * (1 - od.Discount)) AS TotalQuantity,
-    YEAR(ord.OrderDate) AS OrderYear
-FROM Employees AS e
-JOIN Orders AS ord ON ord.EmployeeID = e.EmployeeID
-JOIN `Order Details` AS od ON od.OrderID = ord.OrderID
-GROUP BY OrderYear, e.EmployeeID, e.FirstName, e.LastName
-ORDER BY OrderYear ASC, TotalQuantity DESC;
-```
-
-> La versión anterior se puede mejorar usando `ROW_NUMBER()` para quedarse con solo el mejor empleado por año.
-
----
-
-## Modelo general de solución para consultas de parcial
-
-```sql
-WITH datos AS (
-    SELECT
-        t1.campo1,
-        t2.campo2,
-        SUM(t3.campo3) AS total
-    FROM tabla1 t1
-    JOIN tabla2 t2 ON t2.id = t1.id
-    JOIN tabla3 t3 ON t3.id = t2.id
-    GROUP BY t1.campo1, t2.campo2
-)
-SELECT
-    campo1,
-    campo2,
-    total
-FROM datos
-WHERE condicion
-ORDER BY total DESC;
-```
-
----
-
-## Resumen rápido
-
-En esta práctica se trabajan principalmente:
-- joins entre varias tablas
-- agregaciones (`SUM`, `COUNT`, `GROUP BY`)
-- CTEs con `WITH`
-- vistas (`CREATE VIEW`)
-- triggers
-- permisos y roles
-
-Estos temas son muy típicos en parciales de Base de Datos.
-
----
-
-## Recomendación final
-
-Si te van a evaluar por SQL, conviene que tengas bien claro esto:
-1. hacer joins correctos
-2. agrupar bien con `GROUP BY`
-3. ordenar con `ORDER BY`
-4. usar `WITH` para consultas más legibles
-5. saber crear triggers y roles
-
-Si querés, después te puedo armar una versión todavía más corta tipo “apunte final para estudiar 10 minutos antes del parcial”.
+Si querés, te lo dejo todavía más corto, tipo “apunte de examen”, solo con el SQL más importante y sin texto extra.
