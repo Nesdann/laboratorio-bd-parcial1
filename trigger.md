@@ -1,20 +1,6 @@
-# Triggers en SQL
+# Triggers en MySQL
 
-Un trigger es un bloque de código que se ejecuta automáticamente cuando ocurre un evento sobre una tabla. Los eventos más comunes son:
-
-- `INSERT`
-- `UPDATE`
-- `DELETE`
-
-Se usan para:
-- validar datos
-- mantener integridad
-- actualizar otras tablas automáticamente
-- controlar stock, logs, auditoría, etc.
-
----
-
-## Estructura básica de un trigger
+## Estructura
 
 ```sql
 DELIMITER $$
@@ -23,200 +9,86 @@ CREATE TRIGGER nombre_trigger
 AFTER INSERT ON tabla
 FOR EACH ROW
 BEGIN
-    -- lógica del trigger
-END $$
+    -- código
+END$$
 
 DELIMITER ;
 ```
 
-### Partes importantes
-
-- `CREATE TRIGGER nombre_trigger`: nombre del trigger
-- `AFTER INSERT ON tabla`: cuándo se dispara y sobre qué tabla
-- `FOR EACH ROW`: se ejecuta por cada fila afectada
-- `BEGIN ... END`: bloque principal
-
----
-
-## Cuándo se dispara
-
-### 1. AFTER INSERT
-Se ejecuta después de hacer un insert.
+## `NEW` y `OLD`
 
 ```sql
-CREATE TRIGGER ejemplo_after_insert
-AFTER INSERT ON Customers
-FOR EACH ROW
-BEGIN
-    SELECT 'Se insertó un cliente';
-END;
+AFTER INSERT: NEW
+AFTER UPDATE: NEW y OLD
+AFTER DELETE: OLD
 ```
 
-### 2. AFTER UPDATE
-Se ejecuta después de actualizar una fila.
+Ejemplo:
 
 ```sql
-CREATE TRIGGER ejemplo_after_update
-AFTER UPDATE ON Products
-FOR EACH ROW
-BEGIN
-    -- lógica
-END;
-```
-
-### 3. AFTER DELETE
-Se ejecuta después de borrar una fila.
-
-```sql
-CREATE TRIGGER ejemplo_after_delete
-AFTER DELETE ON Orders
-FOR EACH ROW
-BEGIN
-    -- lógica
-END;
-```
-
----
-
-## ¿Qué son NEW y OLD?
-
-En MySQL, dentro de un trigger, se usan `NEW` y `OLD` para acceder a los valores de la fila afectada.
-
-### `NEW`
-Representa el valor nuevo de una fila.
-
-- en un `INSERT`, `NEW` tiene los valores que se insertan
-- en un `UPDATE`, `NEW` tiene los valores nuevos
-
-### `OLD`
-Representa el valor anterior de una fila.
-
-- en un `UPDATE`, `OLD` tiene los valores viejos
-- en un `DELETE`, `OLD` tiene la fila que se elimina
-
-### Ejemplo con `NEW`
-
-```sql
-CREATE TRIGGER trg_insert_cliente
-AFTER INSERT ON Customers
+CREATE TRIGGER trg_reviews
+AFTER INSERT ON reviews
 FOR EACH ROW
 BEGIN
     INSERT INTO auditoria (mensaje)
-    VALUES (CONCAT('Se insertó el cliente: ', NEW.CustomerID));
+    VALUES (CONCAT('Nueva review: ', NEW.comment));
 END;
 ```
 
-### Ejemplo con `OLD`
+## Ver un trigger
 
 ```sql
-CREATE TRIGGER trg_delete_cliente
-AFTER DELETE ON Customers
-FOR EACH ROW
-BEGIN
-    INSERT INTO auditoria (mensaje)
-    VALUES (CONCAT('Se eliminó el cliente: ', OLD.CustomerID));
-END;
+SHOW CREATE TRIGGER nombre_trigger;
 ```
-
-### Ejemplo con `OLD` y `NEW` en `UPDATE`
 
 ```sql
-CREATE TRIGGER trg_update_precio
-AFTER UPDATE ON Products
-FOR EACH ROW
-BEGIN
-    INSERT INTO auditoria (mensaje)
-    VALUES (
-        CONCAT(
-            'Antes: ', OLD.UnitPrice,
-            ' - Ahora: ', NEW.UnitPrice
-        )
-    );
-END;
+SHOW TRIGGERS;
 ```
 
----
+## Eliminar un trigger
 
-## Trigger con `UPDATE`
+```sql
+DROP TRIGGER IF EXISTS nombre_trigger;
+```
 
-Cuando el trigger hace un `UPDATE`, normalmente se usa `SET` para cambiar valores de otra tabla o de la misma tabla.
-
-### Esquema general
+## Trigger de ejemplo: reseña negativa
 
 ```sql
 DELIMITER $$
 
-CREATE TRIGGER nombre_trigger
-AFTER UPDATE ON tabla_origen
+CREATE TRIGGER malaresena
+AFTER INSERT ON reviews
 FOR EACH ROW
 BEGIN
-    UPDATE tabla_destino
-    SET campo = valor
-    WHERE condicion;
-END $$
+    DECLARE ownerId INT;
+
+    IF NEW.rating <= 2 THEN
+        SELECT owner_id INTO ownerId
+        FROM properties
+        WHERE id = NEW.property_id;
+
+        INSERT INTO messages (sender_id, receiver_id, property_id, content)
+        VALUES (NEW.user_id, ownerId, NEW.property_id, NEW.comment);
+    END IF;
+END$$
 
 DELIMITER ;
 ```
 
-### Ejemplo 1: actualizar stock al modificar una cantidad
+## Importante
+
+- `receiver_id` debe ser un usuario.
+- `NEW.property_id` no sirve como `receiver_id`.
+- Hay que buscar el `owner_id` de esa propiedad.
+
+## Error clásico
 
 ```sql
-DELIMITER $$
-
-CREATE TRIGGER update_stock_on_update
-AFTER UPDATE ON `Order Details`
-FOR EACH ROW
-BEGIN
-    UPDATE Products
-    SET UnitsInStock = UnitsInStock - (NEW.Quantity - OLD.Quantity)
-    WHERE ProductID = NEW.ProductID;
-END $$
-
-DELIMITER ;
+INSERT INTO messages (sender_id, receiver_id, property_id, content)
+VALUES (NEW.user_id, NEW.property_id, NEW.property_id, NEW.comment);
 ```
 
-### ¿Qué hace?
-- si la cantidad vendida cambió
-- calcula la diferencia: `NEW.Quantity - OLD.Quantity`
-- ajusta el stock en consecuencia
-
----
-
-## Trigger con `INSERT`
-
-### Esquema general
-
-```sql
-DELIMITER $$
-
-CREATE TRIGGER nombre_trigger
-AFTER INSERT ON tabla
-FOR EACH ROW
-BEGIN
-    UPDATE otra_tabla
-    SET campo = campo - NEW.campo_cantidad
-    WHERE id = NEW.id_relacionado;
-END $$
-
-DELIMITER ;
-```
-
-### Ejemplo 2: descontar stock al insertar detalle de pedido
-
-```sql
-DELIMITER $$
-
-CREATE TRIGGER update_stock
-AFTER INSERT ON `Order Details`
-FOR EACH ROW
-BEGIN
-    UPDATE Products
-    SET UnitsInStock = UnitsInStock - NEW.Quantity
-    WHERE ProductID = NEW.ProductID;
-END $$
-
-DELIMITER ;
-```
+Esto está mal porque `receiver_id` espera un usuario, no un ID de propiedad.
 
 ### Qué hace
 - cada vez que se inserta un detalle de pedido
